@@ -1,0 +1,35 @@
+import pandas as pd
+from sqlalchemy import create_engine
+
+# СОЗДАЕМ SQL ТАБЛИЦЫ
+
+engine = create_engine('postgresql+psycopg2://___________', connect_args={'client_encoding': 'utf8'})
+
+    dir_cred = {'user_id': [000000000],
+            'name_cred': ['name_1'],
+            'cred_limit': [100000],
+            'stert_date': ['2021-01-01'],
+            'end_data': ['2025-01-01'],
+            'mon_payment': [1000.10],
+            'limit_today': [55156.06], 
+            'proc': [0.125],
+            'day_pay': ['2024-12-19']}
+
+credit_data = pd.DataFrame(dir_cred)
+credit_data.to_sql('credit_data', con=engine, if_exists='replace', index=True, index_label='id')
+
+dir_deb = {'name_debet': ['name'],
+           'user_id': [000000000],
+           'sum_debet': [500000],
+           'bank_name': ['bank'],
+           'rate': [0.16]}
+
+debet_data = pd.DataFrame(dir_deb)
+debet_data.to_sql('debet_data', con=engine, if_exists='replace', index=True, index_label='id')
+
+dir_user = {'user_id': [000000],
+            'name': ['Ivanov Ivan'],
+            'tipe': ['user']}
+
+user_data = pd.DataFrame(dir_user)
+user_data.to_sql('user_data', con=engine, if_exists='replace', index=True, index_label='id')

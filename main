@@ -115,36 +115,103 @@ def get_text_messages_start(message):
 
 # ВНЕСЕНИЕ ДАННЫХ ПО КРЕДИТАМ
 
+@bot.message_handler(commands=['insert_credit'])
 def credit_insert(message):
-    data = message.text.split(', ')
-    cred = Credit_data(id = len(pd.read_sql_query('select id from credit_data', engine)),
-                       user_id = message.chat.id,
-                       name_cred = data[0],
-                       cred_limit = data[1],
-                       stert_date = data[2],
-                       end_data = data[3],
-                       mon_payment = data[4],
-                       limit_today = data[5],
-                       proc = data[6],
-                       day_pay = data[7]
-    )
+    msg = bot.send_message(message.from_user.id, text='Введите данные по кредиту:\n'
+                                                      'Название кредита?')
+    bot.register_next_step_handler(msg, credit_insert_2)
+
+def credit_insert_2(message):
+    answer = message.text
+    msg = bot.send_message(message.from_user.id, text='Сумма кредита который был взят?\nФормат написания: 1000.00')
+    bot.register_next_step_handler(msg, credit_insert_3, answer)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_3(message, answer):
+    answer_2 = answer + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Дата когда был взят кредит?\nФормат написания: 2000-01-01')
+    bot.register_next_step_handler(msg, credit_insert_4, answer_2)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_4(message, answer_2):
+    answer_3 = answer_2 + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Дата окончания кредита?\nФормат написания: 2000-01-01')
+    bot.register_next_step_handler(msg, credit_insert_5, answer_3)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_5(message, answer_3):
+    answer_4 = answer_3 + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Сумма ежемесячного платежа?\nФормат написания: 1000.00')
+    bot.register_next_step_handler(msg, credit_insert_6, answer_4)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_6(message, answer_4):
+    answer_5 = answer_4 + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Остаток долга?\nФормат написания: 1000.00')
+    bot.register_next_step_handler(msg, credit_insert_7, answer_5)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_7(message, answer_5):
+    answer_6 = answer_5 + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Процентная ставка?\nФормат написания: 5%')
+    bot.register_next_step_handler(msg, credit_insert_8, answer_6)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_8(message, answer_6):
+    answer_7 = answer_6 + '//' + str(float((message.text).replace("%",""))/100)
+    msg = bot.send_message(message.from_user.id, text='Дата платежа?\nФормат написания: 2000-01-01')
+    bot.register_next_step_handler(msg, credit_insert_9, answer_7)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def credit_insert_9(message, answer_7):
+    answer_total = (answer_7 + '//' + message.text).split('//')
+
+    cred = Credit_data(id=len(pd.read_sql_query('select id from credit_data', engine)),
+                       user_id=message.chat.id,
+                       name_cred=answer_total[0],
+                       cred_limit=answer_total[1],
+                       stert_date=answer_total[2],
+                       end_data=answer_total[3],
+                       mon_payment=answer_total[4],
+                       limit_today=answer_total[5],
+                       proc=answer_total[6],
+                       day_pay=answer_total[7]
+                       )
 
     cd.add(cred)
     cd.commit()
-    bot.delete_message(message.chat.id, message.message_id - 1)
     bot.send_message(message.from_user.id, text='Запись созранена!', parse_mode='Markdown')
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
 
-@bot.message_handler(commands=['insert_credit'])
-def get_text_credit_insert(message):
-    msg = bot.send_message(message.from_user.id, text='Введите данные по кредиту в следующем формате:\n'
-                                                      'название кредита, сумма кредита который был взят, '
-                                                      'дата когда был взят кредит,'
-                                                      'дата окончания кредита, сумма ежемесячного платежа, '
-                                                      'остаток долга, процентная ставка, дата платежа \n\n'
-                                                      'Пример написания:\n'
-                                                      'name, 10000, 2000-01-01, 2030-01-02, 1000, 6400.45, 0.30, '
-                                                      '2024-01-30')
-    bot.register_next_step_handler(msg, credit_insert)
+# УДАЛЕНИЕ ИНФОРМАЦИИ ПО КРЕДИТУ
+
+@bot.message_handler(commands=['delete_credit'])
+def delete_credit(message):
+    list_name = list(pd.read_sql_query(f'select * from credit_data '
+                                       f'where user_id = {message.chat.id}', engine).name_cred)
+    mm = types.ReplyKeyboardMarkup(row_width=2)
+    for i in list_name:
+        mm.add(types.KeyboardButton(i))
+
+    msg = bot.send_message(message.chat.id, text='Какой кредит удалить?', reply_markup=mm)
+    bot.register_next_step_handler(msg, delete_credit_2)
+
+def delete_credit_2(message):
+    credit = cd.query(Credit_data).filter(and_(Credit_data.name_cred == message.text,
+                                               Credit_data.user_id == message.chat.id)).first()
+    cd.delete(credit)
+    cd.commit()
+
+    a = telebot.types.ReplyKeyboardRemove()
+    bot.send_message(message.chat.id, text= f'Кредит удален: {message.text}!', reply_markup=a)
 
 # ЗАПРОС ДАННЫХ О КРЕДИТАХ
 
@@ -152,7 +219,6 @@ def get_text_credit_insert(message):
 @bot.message_handler(func=lambda message: message.chat.id not in list(pd.read_sql_query('select * from credit_data', engine).user_id.drop_duplicates()),
                      commands=['pay', 'day'])
 def some(message):
-    bot.delete_message(message.chat.id, message.message_id - 2)
     bot.send_message(message.chat.id, 'Нет записей о наличии кредитов.')
 
 ## ОТПРАВКА СООБЩЕНИЯ О СУММЕ ПЛАТЕЖА
@@ -167,8 +233,9 @@ def get_text_messages_summ_cred(message):
 
     s += '*итого сумма в мес.* : ' + '{:,.2f}'.format(sum(data_pay['mon_payment'])) + ' рублей'
 
+    bot.delete_message(message.chat.id, message.message_id - 1)
     bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.from_user.id, text= s, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text= s, parse_mode='Markdown')
 
 ## ОТПРАВКА СООБЩЕНИЯ О ДАТЕ ПЛАТЕЖА
 @bot.message_handler(commands=['day'])
@@ -181,8 +248,9 @@ def get_text_messages_day_pay(message):
         d_p = (d_p + '*' + data_pay.loc[i, 'name_cred'] + '*' + ' дата платежа: ' + data_pay.loc[i, 'day_pay']
                + ', сумма платежа: ' + '{:,.2f}'.format(data_pay.loc[i, 'mon_payment']) + ' рублей. \n\n')
 
+    bot.delete_message(message.chat.id, message.message_id - 1)
     bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.from_user.id, text= d_p, parse_mode='Markdown')
+    bot.send_message(message.chat.id, text= d_p, parse_mode='Markdown')
 
 # ВНЕСЕНИЕ ДАННЫХ ПО ДЕПОЗИТАМ
 
@@ -200,7 +268,7 @@ def debet_insert(message):
     db.commit()
 
     bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.from_user.id, text='Запись созранена!', parse_mode='Markdown')
+    bot.send_message(message.from_user.id, text='Запись сохранена!', parse_mode='Markdown')
 
 @bot.message_handler(commands=['insert_debet'])
 def get_text_debet_insert(message):
@@ -211,6 +279,7 @@ def get_text_debet_insert(message):
                                                       'Пример написания:\n'
                                                       'name, 10000, bank, 0.30')
 
+    bot.delete_message(message.chat.id, message.message_id - 1)
     bot.delete_message(message.chat.id, message.message_id - 2)
     bot.register_next_step_handler(msg, debet_insert)
 
@@ -220,6 +289,7 @@ def get_text_debet_insert(message):
 @bot.message_handler(func=lambda message: message.chat.id not in list(pd.read_sql_query('select * from debet_data', engine).user_id.drop_duplicates()),
                      commands=['deposit'])
 def some(message):
+    bot.delete_message(message.chat.id, message.message_id - 1)
     bot.delete_message(message.chat.id, message.message_id - 2)
     bot.send_message(message.chat.id, 'Нет записей о наличии депозитов.')
 
@@ -236,9 +306,54 @@ def get_text_messages_summ_deposit(message):
     bot.delete_message(message.chat.id, message.message_id - 2)
     bot.send_message(message.from_user.id, text= dp, parse_mode='Markdown')
 
-def schedule_checker():
-    while True:
-        scheduler.start()
+## ОБНОВЛЕНИЕ СВЕДЕНИЙ О ДЕПОЗИТЕ
+@bot.message_handler(commands=['update_deposit'])
+def update_dposit(message):
+    list_name = list(pd.read_sql_query('select * from debet_data', engine).name_debet)
 
-Thread(target=schedule_checker).start()
+    mm = types.ReplyKeyboardMarkup(row_width=2)
+    for i in list_name:
+        mm.add(types.KeyboardButton(i))
+
+    msg = bot.send_message(message.chat.id, text='Какой депозит небходимо исправить?', reply_markup=mm)
+    bot.register_next_step_handler(msg, update_dposit_1)
+
+def update_dposit_1(message):
+    answer = message.text
+    list_name_2 = ['Сумма депозита', 'Процентная ставка', 'Название банка', 'Название депозита']
+    mm = types.ReplyKeyboardMarkup(row_width=2)
+    for i in list_name_2:
+        mm.add(types.KeyboardButton(i))
+
+    msg = bot.send_message(message.from_user.id, text='Что необходимо исправить?', reply_markup=mm)
+    bot.register_next_step_handler(msg, update_dposit_2, answer)
+
+def update_dposit_2(message, answer):
+    answer_2 = answer + '//' + message.text
+    a = telebot.types.ReplyKeyboardRemove()
+    msg = bot.send_message(message.from_user.id, text='Введите новое значение', reply_markup=a)
+    bot.register_next_step_handler(msg, update_dposit_3, answer_2)
+
+def update_dposit_3(message, answer_2):
+    answer_3 = (answer_2 + '//' + message.text).split('//')
+
+    if answer_3[1] == 'Сумма депозита':
+        db.query(Debet_data).filter(Debet_data.name_debet == answer_3[0] and
+                                    Debet_data.user_id == message.from_user.id).update({'sum_debet': answer_3[2]})
+    elif answer_3[1] == 'Процентная ставка':
+        db.query(Debet_data).filter(Debet_data.name_debet == answer_3[0] and
+                                    Debet_data.user_id == message.from_user.id).update({'rate': answer_3[2]})
+    elif answer_3[1] == 'Название банка':
+        db.query(Debet_data).filter(Debet_data.name_debet == answer_3[0] and
+                                    Debet_data.user_id == message.from_user.id).update({'bank_name': answer_3[2]})
+    elif answer_3[1] == 'Название депозита':
+        db.query(Debet_data).filter(Debet_data.name_debet == answer_3[0] and
+                                    Debet_data.user_id == message.from_user.id).update({'name_debet': answer_3[2]})
+
+    db.commit()
+
+    bot.send_message(message.from_user.id, text='Данные исправлены!')
+    for i in range(1, 8):
+        bot.delete_message(message.chat.id, message.message_id - i)
+
 bot.polling(none_stop=True, interval=0)

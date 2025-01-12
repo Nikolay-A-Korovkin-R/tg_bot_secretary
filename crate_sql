@@ -27,9 +27,17 @@ dir_deb = {'name_debet': ['name'],
 debet_data = pd.DataFrame(dir_deb)
 debet_data.to_sql('debet_data', con=engine, if_exists='replace', index=True, index_label='id')
 
-dir_user = {'user_id': [000000],
+dir_user = {'user_id': [000000000],
             'name': ['Ivanov Ivan'],
             'tipe': ['user']}
 
 user_data = pd.DataFrame(dir_user)
 user_data.to_sql('user_data', con=engine, if_exists='replace', index=True, index_label='id')
+
+dir_task = {'user_id': [000000000],
+            'task': ['Test'],
+            'data_task': ['2025-01-30'],
+            'date_making': ['2025-01-12']}
+
+task_data = pd.DataFrame(dir_task)
+task_data.to_sql('task_data', con=engine, if_exists='replace', index=True, index_label='id')

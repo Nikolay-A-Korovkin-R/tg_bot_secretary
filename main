@@ -423,7 +423,7 @@ def task_insert(message):
 
 def task_insert_2(message):
     answer = message.text
-    msg = bot.send_message(message.from_user.id, text='Введите дату задачи')
+    msg = bot.send_message(message.from_user.id, text='Введите дату задачи\nФормат написания: 2000-01-01')
     bot.register_next_step_handler(msg, task_insert_3, answer)
     bot.delete_message(message.chat.id, message.message_id)
     bot.delete_message(message.chat.id, message.message_id - 1)

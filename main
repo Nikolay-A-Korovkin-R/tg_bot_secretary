@@ -1,20 +1,17 @@
 import os
-
-from sqlalchemy.orm.sync import update
+from pyexpat.errors import messages
 
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
 
 import telebot
 from dateutil.utils import today
 from numpy.testing.print_coercion_tables import print_new_cast_table
-from telebot import types
-import sqlalchemy.types
 import pandas as pd
 import psycopg2
-from sqlalchemy import create_engine
-import time
 
+import time
 from datetime import datetime
+from datetime import timedelta
 from datetime import date
 from dateutil.relativedelta import relativedelta
 import schedule
@@ -27,7 +24,13 @@ from sqlalchemy.sql import insert,update
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Session
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy import and_, or_, not_
 from sqlalchemy import  Column, Integer, String
+from sqlalchemy.orm.sync import update
+import sqlalchemy.types
+
+from keyboa import Keyboa
+from telebot import types
 
 bot = telebot.TeleBot('________________')
 
@@ -90,7 +93,23 @@ class Debet_data(Base):
 Base.metadata.create_all(bind=engine)
 
 with Session(autoflush=False, bind=engine) as db:
-    data_debet= Debet_data()
+    data_debet = Debet_data()
+
+## БАЗА ДАННЫХ С ЗАДАЧАМИ
+
+class Task_data(Base):
+    __tablename__ = "task_data"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer)
+    task = Column(String)
+    data_task = Column(Integer)
+    date_making = Column(String)
+
+Base.metadata.create_all(bind=engine)
+
+with Session(autoflush=False, bind=engine) as td:
+    data_task = Task_data()
 
 # РЕГИСТРАЦИЯ ПОЛЬЗОВАТЕЛЯ
 
@@ -110,7 +129,8 @@ def get_text_messages_start(message):
         msg = bot.send_message(message.from_user.id, text='Нужно зарегистрироваться! Отправь имя и фамилию')
         bot.register_next_step_handler(msg, auth)
     else:
-        s = 'Добро пожаловать, ' + data.loc[0, 'name'] + '!'
+        s = (f'Добро пожаловать, {data.loc[0, "name"]}!\n'
+             f'Со всеми доступными на данный момент функциями вы можете ознакомиться в разделе с коммандами.')
         bot.send_message(message.from_user.id, text=s, parse_mode='Markdown')
 
 # ВНЕСЕНИЕ ДАННЫХ ПО КРЕДИТАМ
@@ -187,7 +207,7 @@ def credit_insert_9(message, answer_7):
 
     cd.add(cred)
     cd.commit()
-    bot.send_message(message.from_user.id, text='Запись созранена!', parse_mode='Markdown')
+    bot.send_message(message.from_user.id, text=f'Информация о кредите {answer_total[0]} сохранена!', parse_mode='Markdown')
     bot.delete_message(message.chat.id, message.message_id)
     bot.delete_message(message.chat.id, message.message_id - 1)
 
@@ -211,100 +231,136 @@ def delete_credit_2(message):
     cd.commit()
 
     a = telebot.types.ReplyKeyboardRemove()
-    bot.send_message(message.chat.id, text= f'Кредит удален: {message.text}!', reply_markup=a)
+    bot.send_message(message.chat.id, text= f'Информация по кредиту {message.text} удалена!', reply_markup=a)
 
 # ЗАПРОС ДАННЫХ О КРЕДИТАХ
 
-## ПРОВЕРКА НА НАЛИЧИЕ ЗАПИСЕЙ
-@bot.message_handler(func=lambda message: message.chat.id not in list(pd.read_sql_query('select * from credit_data', engine).user_id.drop_duplicates()),
-                     commands=['pay', 'day'])
-def some(message):
-    bot.send_message(message.chat.id, 'Нет записей о наличии кредитов.')
-
 ## ОТПРАВКА СООБЩЕНИЯ О СУММЕ ПЛАТЕЖА
 @bot.message_handler(commands=['pay'])
-def get_text_messages_summ_cred(message):
-    data_pay = pd.read_sql_query(f"select * from credit_data where user_id = {message.chat.id}", engine)
+def summ_cred(message):
+    if message.chat.id not in list(pd.read_sql_query('select * from credit_data', engine).user_id.drop_duplicates()):
+        bot.send_message(message.chat.id, 'Нет записей о наличии кредитов.')
+    else:
+        data_pay = pd.read_sql_query(f"select * from credit_data where user_id = {message.chat.id}", engine)
 
-    s = '*Сумма платежей по кредитам*\n\n'
-    for i in range(len(data_pay)):
-        s = (s + '*' + data_pay.loc[i, 'name_cred'] + '*' + ' платеж по кредиту составляет ' +
-             '{:,.2f}'.format(data_pay.loc[i, 'mon_payment']) + ' рублей. \n\n')
+        s = '*Сумма платежей по кредитам*\n\n'
+        for i in range(len(data_pay)):
+            s = (s + '*' + data_pay.loc[i, 'name_cred'] + '*' + ' платеж по кредиту составляет ' +
+                 '{:,.2f}'.format(data_pay.loc[i, 'mon_payment']) + ' рублей. \n\n')
 
-    s += '*итого сумма в мес.* : ' + '{:,.2f}'.format(sum(data_pay['mon_payment'])) + ' рублей'
+        s += '*итого сумма в мес.* : ' + '{:,.2f}'.format(sum(data_pay['mon_payment'])) + ' рублей'
 
-    bot.delete_message(message.chat.id, message.message_id - 1)
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.chat.id, text= s, parse_mode='Markdown')
+        bot.delete_message(message.chat.id, message.message_id)
+        bot.delete_message(message.chat.id, message.message_id - 1)
+        bot.send_message(message.chat.id, text= s, parse_mode='Markdown')
 
 ## ОТПРАВКА СООБЩЕНИЯ О ДАТЕ ПЛАТЕЖА
 @bot.message_handler(commands=['day'])
-def get_text_messages_day_pay(message):
-    data_day_pay = pd.read_sql_query(f"select name_cred, day_pay, mon_payment from credit_data where user_id = {message.chat.id}", engine)
-    data_pay = pd.read_sql_query(f"select * from credit_data where user_id = {message.chat.id}", engine)
+def day_pay(message):
+    if message.chat.id not in list(pd.read_sql_query('select * from credit_data', engine).user_id.drop_duplicates()):
+        bot.send_message(message.chat.id, 'Нет записей о наличии кредитов.')
+    else:
+        data_day_pay = pd.read_sql_query(f"select name_cred, day_pay, mon_payment from credit_data "
+                                         f"where user_id = {message.chat.id}", engine)
+        data_pay = pd.read_sql_query(f"select * from credit_data where user_id = {message.chat.id}", engine)
 
-    d_p = '*Даты платежей по кредитам* \n\n'
-    for i in range(len(data_day_pay)):
-        d_p = (d_p + '*' + data_pay.loc[i, 'name_cred'] + '*' + ' дата платежа: ' + data_pay.loc[i, 'day_pay']
-               + ', сумма платежа: ' + '{:,.2f}'.format(data_pay.loc[i, 'mon_payment']) + ' рублей. \n\n')
+        d_p = '*Даты платежей по кредитам* \n\n'
+        for i in range(len(data_day_pay)):
+            d_p = (d_p + '*' + data_pay.loc[i, 'name_cred'] + '*' + ' дата платежа: ' + data_pay.loc[i, 'day_pay']
+                   + ', сумма платежа: ' + '{:,.2f}'.format(data_pay.loc[i, 'mon_payment']) + ' рублей. \n\n')
 
-    bot.delete_message(message.chat.id, message.message_id - 1)
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.chat.id, text= d_p, parse_mode='Markdown')
+        bot.delete_message(message.chat.id, message.message_id)
+        bot.delete_message(message.chat.id, message.message_id - 1)
+        bot.send_message(message.chat.id, text= d_p, parse_mode='Markdown')
 
 # ВНЕСЕНИЕ ДАННЫХ ПО ДЕПОЗИТАМ
 
+@bot.message_handler(commands=['insert_debet'])
 def debet_insert(message):
-    data = message.text.split(', ')
+    msg = bot.send_message(message.from_user.id, text='Введите название депозита.\nФормат написания: Название.')
+
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+    bot.register_next_step_handler(msg, debet_insert_1)
+
+def debet_insert_1(message):
+    answer = message.text
+    msg = bot.send_message(message.from_user.id, text='Введите сумму депозита.\nФормат написания: 1000.00')
+    bot.register_next_step_handler(msg, debet_insert_2, answer)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def debet_insert_2(message, answer):
+    answer_1 = answer + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Введите название банка.\nФормат написания: Банк')
+    bot.register_next_step_handler(msg, debet_insert_3, answer_1)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def debet_insert_3(message, answer_1):
+    answer_2 = answer_1 + '//' + message.text
+    msg = bot.send_message(message.from_user.id, text='Процентная ставка.\nФормат написания: 18%')
+    bot.register_next_step_handler(msg, debet_insert_4, answer_2)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def debet_insert_4(message, answer_2):
+    answer_3 = answer_2 + '//' +  str(float((message.text).replace("%",""))/100)
+    answer_3 = answer_3.split('//')
     debet = Debet_data(id = len(pd.read_sql_query('select id from debet_data', engine)),
-                       name_debet = data[0],
+                       name_debet = answer_3[0],
                        user_id = message.chat.id,
-                       sum_debet = data[1],
-                       bank_name = data[2],
-                       rate = data[3]
+                       sum_debet = answer_3[1],
+                       bank_name = answer_3[2],
+                       rate = answer_3[3]
     )
 
     db.add(debet)
     db.commit()
 
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.from_user.id, text='Запись сохранена!', parse_mode='Markdown')
-
-@bot.message_handler(commands=['insert_debet'])
-def get_text_debet_insert(message):
-    msg = bot.send_message(message.from_user.id, text='Введите данные по депозитам в следующем формате:\n'
-                                                      'название депозита, сумма депозита, '
-                                                      'название банка,'
-                                                      'процентная ставка\n\n'
-                                                      'Пример написания:\n'
-                                                      'name, 10000, bank, 0.30')
-
+    bot.delete_message(message.chat.id, message.message_id)
     bot.delete_message(message.chat.id, message.message_id - 1)
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.register_next_step_handler(msg, debet_insert)
+    bot.send_message(message.from_user.id, text=f'Запись о депозите {answer_3[0]} сохранена!', parse_mode='Markdown')
+
+# УДАЛЕНИЕ ИНФОРМАЦИИ ПО ДЕПОЗИТАМ
+
+@bot.message_handler(commands=['delete_debet'])
+def delete_debet(message):
+    list_name = list(pd.read_sql_query(f'select * from debet_data '
+                                       f'where user_id = {message.chat.id}', engine).name_debet)
+    mm = types.ReplyKeyboardMarkup(row_width=2)
+    for i in list_name:
+        mm.add(types.KeyboardButton(i))
+
+    msg = bot.send_message(message.chat.id, text='Какой депозит удалить?', reply_markup=mm)
+    bot.register_next_step_handler(msg, delete_debet_2)
+
+def delete_debet_2(message):
+    debet = db.query(Debet_data).filter(and_(Debet_data.name_debet == message.text,
+                                               Debet_data.user_id == message.chat.id)).first()
+    db.delete(debet)
+    db.commit()
+
+    a = telebot.types.ReplyKeyboardRemove()
+    bot.send_message(message.chat.id, text= f'Информация по депозиту {message.text} удалена!', reply_markup=a)
 
 # ЗАПРОС ДАННЫХ О ДЕПОЗИТАХ
 
-## ПРОВЕРКА НА НАЛИЧИЕ ЗАПИСЕЙ
-@bot.message_handler(func=lambda message: message.chat.id not in list(pd.read_sql_query('select * from debet_data', engine).user_id.drop_duplicates()),
-                     commands=['deposit'])
-def some(message):
-    bot.delete_message(message.chat.id, message.message_id - 1)
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.chat.id, 'Нет записей о наличии депозитов.')
-
 ## СУММА НА ДЕПОЗИТАХ
 @bot.message_handler(commands=['deposit'])
-def get_text_messages_summ_deposit(message):
-    data = pd.read_sql_query(f"select * from debet_data where user_id = {message.chat.id}", engine)
+def summ_deposit(message):
+    if message.chat.id not in list(pd.read_sql_query('select * from debet_data', engine).user_id.drop_duplicates()):
+        bot.send_message(message.chat.id, 'Нет записей о наличии депозитов.')
+    else:
+        data = pd.read_sql_query(f"select * from debet_data where user_id = {message.chat.id}", engine)
 
-    dp = '*Накопления*\n\n'
-    for i in range(len(data)):
-        dp = dp + 'Сумма: ' + '{:,.2f}'.format(data.loc[i, 'sum_debet']) + ' руб.\n'
-    dp += '\n*итого сумма* : ' + '{:,.2f}'.format(sum(data['sum_debet'])) + ' рублей'
+        dp = '*Накопления*\n\n'
+        for i in range(len(data)):
+            dp = dp + 'Сумма: ' + '{:,.2f}'.format(data.loc[i, 'sum_debet']) + ' руб.\n'
+        dp += '\n*итого сумма* : ' + '{:,.2f}'.format(sum(data['sum_debet'])) + ' рублей'
 
-    bot.delete_message(message.chat.id, message.message_id - 2)
-    bot.send_message(message.from_user.id, text= dp, parse_mode='Markdown')
+        bot.delete_message(message.chat.id, message.message_id - 2)
+        bot.send_message(message.from_user.id, text= dp, parse_mode='Markdown')
 
 ## ОБНОВЛЕНИЕ СВЕДЕНИЙ О ДЕПОЗИТЕ
 @bot.message_handler(commands=['update_deposit'])
@@ -355,5 +411,74 @@ def update_dposit_3(message, answer_2):
     bot.send_message(message.from_user.id, text='Данные исправлены!')
     for i in range(1, 8):
         bot.delete_message(message.chat.id, message.message_id - i)
+
+## ИНФОРМАЦИЯ ПО ЗАДАЧАМ
+
+#ВНЕСЕНИЕ ЗАДАЧИ
+
+@bot.message_handler(commands=['insert_task'])
+def task_insert(message):
+    msg = bot.send_message(message.from_user.id, text='Введите задачу')
+    bot.register_next_step_handler(msg, task_insert_2)
+
+def task_insert_2(message):
+    answer = message.text
+    msg = bot.send_message(message.from_user.id, text='Введите дату задачи')
+    bot.register_next_step_handler(msg, task_insert_3, answer)
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+
+def task_insert_3(message, answer):
+    task = Task_data(id = len(pd.read_sql_query('select id from task_data', engine)),
+                       user_id = message.chat.id,
+                       task = answer,
+                       data_task = message.text,
+                       date_making = today().date()
+    )
+
+    td.add(task)
+    td.commit()
+
+    bot.delete_message(message.chat.id, message.message_id)
+    bot.delete_message(message.chat.id, message.message_id - 1)
+    bot.send_message(message.from_user.id, text='Запись сохранена!', parse_mode='Markdown')
+
+# ПРОСМОТР ЗАДАЧИ
+
+@bot.message_handler(commands=['task'])
+def task(message):
+    list_date = ['За сегодня', 'За завтра']
+    mm = types.ReplyKeyboardMarkup(row_width=2)
+    for i in list_date:
+        mm.add(types.KeyboardButton(i))
+
+    msg = bot.send_message(message.from_user.id, text='За какой день необходимо показать задачи?', reply_markup=mm)
+    bot.register_next_step_handler(msg, task_2)
+
+def task_2(message):
+    if message.text == 'За сегодня':
+        data = pd.read_sql_query(f"select task from task_data "
+                                 f"where user_id = {message.chat.id} and data_task = '{str(today().date())}'", engine)
+        a = telebot.types.ReplyKeyboardRemove()
+        if data.empty:
+            bot.send_message(message.from_user.id, text='На сегодня нет задач!', reply_markup=a)
+        else:
+            msg = 'На сегодня запланированы следующие задачи:\n\n'
+            for i in range(len(data)):
+                msg += (str(i + 1) + '. ' + data.loc[i, 'task'] + '\n')
+            bot.send_message(message.from_user.id, text=msg, reply_markup=a)
+
+    else:
+        data = pd.read_sql_query(f"select task from task_data "
+                                 f"where user_id = {message.chat.id} "
+                                 f"and data_task = '{str(today().date() + timedelta(days=1))}'", engine)
+        a = telebot.types.ReplyKeyboardRemove()
+        if data.empty:
+            bot.send_message(message.from_user.id, text='На завтра нет задач!', reply_markup=a)
+        else:
+            msg = 'На завтра запланированы следующие задачи:\n\n'
+            for i in range(len(data)):
+                msg += (str(i + 1) + '. ' + data.loc[i, 'task'] + '\n')
+            bot.send_message(message.from_user.id, text=msg, reply_markup=a)
 
 bot.polling(none_stop=True, interval=0)
